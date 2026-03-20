@@ -232,7 +232,8 @@ class SimulationService:
                                 await create_report(simu_paras['level'], simulation_dict, interval)
                                 
                                 yield f"data: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}   正在设置仿真结果可视化页面......\n\n"
-                                url = f'/?data_path={os.path.join(save_dir, name)}&zip_path={os.path.join(save_dir, 'report.zip')}'
+                                abs_save_dir = os.path.abspath(save_dir)
+                                url = f'/?data_path={os.path.join(abs_save_dir, name)}&zip_path={os.path.join(abs_save_dir, 'report.zip')}'
                                 yield f"data: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}   ID为{ID}的卫星仿真任务执行成功，相关结果均已成功生成！\n\n"
                                 logging.info(f'ID为{ID}的卫星仿真任务执行成功！')
                                 
@@ -444,7 +445,8 @@ class SimulationService:
                         await create_report(simu_paras['level'], simulation_dict, interval)
                         
                         yield f"data: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}   正在生成仿真结果可视化页面......\n\n"
-                        url = f'/?data_path={os.path.join(save_dir, constellation_name)}&zip_path={os.path.join(save_dir, 'report.zip')}'
+                        abs_save_dir = os.path.abspath(save_dir)
+                        url = f'/?data_path={os.path.join(abs_save_dir, constellation_name)}&zip_path={os.path.join(abs_save_dir, 'report.zip')}'
                         yield f"data: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}   ID为{simu_paras['ID']}的星座仿真任务执行成功，相关结果均已成功生成！\n\n"
                         logging.info(f'{simu_paras['ID']}号星座的仿真任务执行完成！')
                         

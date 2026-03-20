@@ -26,7 +26,13 @@ class WebAppAuthService:
             passwordSaltDb = account.password_salt
             pwdCorrect = compare_password(password, passwordDb, passwordSaltDb)
 
-            return pwdCorrect, account.name, account.email
+            return (
+                pwdCorrect,
+                str(account.id),
+                account.name,
+                account.email,
+                int(account.coverage_analysis_permission or 0),
+            )
         finally:
             db_session.close_session()
 
@@ -58,6 +64,7 @@ class WebAppAuthService:
             account.password = base64_password_hashed
             account.password_salt = base64_salt
             account.status = 1
+            account.coverage_analysis_permission = 0
             account.create_at = datetime.now()
             account.updated_at = datetime.now()
 
@@ -72,7 +79,8 @@ class WebAppAuthService:
                 'id': str(account.id),
                 'name': account.name,
                 'email': account.email,
-                'status': account.status
+                'status': account.status,
+                'coverage_analysis_permission': int(account.coverage_analysis_permission or 0),
             }
             
             return account_dict

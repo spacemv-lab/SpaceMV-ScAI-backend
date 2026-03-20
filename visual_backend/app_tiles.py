@@ -210,7 +210,7 @@ with st.sidebar:
 
     # 2. Map Base Layer
     st.subheader("🗺️ 底图设置")
-    default_tile = f"http://{get_host_ip()}:8000/gaode_tiles/" + "{z}/{x}/{y}.png"  # 默认url
+    default_tile = f"http://{get_host_ip()}:9999/gaode_tiles/" + "{z}/{x}/{y}.png"  # 默认url
     tile_url = st.text_input("底图瓦片", value=default_tile, help="输入本地或在线瓦片URL")
 
     col_z1, col_z2 = st.columns(2)

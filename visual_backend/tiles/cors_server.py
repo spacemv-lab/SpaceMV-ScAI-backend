@@ -11,7 +11,7 @@ class CORSRequestHandler(SimpleHTTPRequestHandler):
         return super().end_headers()
 
 if __name__ == '__main__':
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8000
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else 9999
     server_address = ('', port)
     httpd = HTTPServer(server_address, CORSRequestHandler)
     print(f"正在端口 {port} 上启动带 CORS 支持的瓦片服务器...")

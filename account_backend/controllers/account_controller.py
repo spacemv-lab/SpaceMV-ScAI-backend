@@ -33,6 +33,7 @@ class RegisterResponse(BaseModel):
     name: str
     email: str
     status: int
+    coverage_analysis_permission: int
 
 
 router = APIRouter(prefix="/api", tags=["账户管理"])
@@ -43,7 +44,7 @@ async def login(request: LoginRequest):
     """User Login"""
     try:
         logger.info(f"Login attempt for user: {request.name}")
-        pwd_correct, name, email = WebAppAuthService.authenticate(
+        pwd_correct, user_id, name, email, coverage_analysis_permission = WebAppAuthService.authenticate(
             name=request.name,
             password=request.password
         )
@@ -55,7 +56,12 @@ async def login(request: LoginRequest):
             code=200,
             result="success",
             msg="ok",
-            data={"name": name, "email": email}
+            data={
+                "id": user_id,
+                "name": name,
+                "email": email,
+                "coverage_analysis_permission": coverage_analysis_permission,
+            }
         )
     except AccountNotFoundError:
         logger.error(f"Account not found: {request.name}")
@@ -83,7 +89,8 @@ async def accountAdd(request: RegisterRequest):
             id=account_dict['id'],
             name=account_dict['name'],
             email=account_dict['email'],
-            status=account_dict['status']
+            status=account_dict['status'],
+            coverage_analysis_permission=account_dict['coverage_analysis_permission'],
         )
     except AccountAlreadyExist:
         logger.error(f"Account already exists: {request.name}")

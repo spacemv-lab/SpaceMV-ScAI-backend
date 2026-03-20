@@ -12,6 +12,8 @@ clickhouse-driver
 clickhouse-sqlalchemy
 aioch
 httpx
+requests
+websockets
 paramiko==3.4.0
 pandas
 plotly

@@ -42,8 +42,8 @@ Space-MV ScAI Backend consists of the following four core modules:
 | :---- | :---- | :---- |
 | **Account Management Service** | account\_backend | Responsible for user authentication (JWT), permission management, and account security. |
 | **Simulation Service** | serve\_backend | Core engine, handling satellite data management and STK coverage simulation analysis. |
-| **Visualization Service** | visual\_backend | Visualization platform built with Streamlit, supporting tile maps and trajectory display. |
-| **Data Synchronization** | timer.py | Scheduled task script, responsible for synchronizing the latest satellite data from Celestrak API. |
+| **Visualization Service** | visual\_backend | Visualization platform built with Streamlit, supporting tile maps, trajectory display, and ADS-B / AIS global snapshot visualization. |
+| **Data Synchronization** | timer.py, opensky\_timer.py, ais\_timer.py | Scheduled task scripts responsible for synchronizing satellite data from Celestrak API, plus ADS-B aircraft states and AIS vessel positions. |
 
 ## **🏗 Technical Architecture**
 
@@ -69,6 +69,8 @@ Space-MV ScAI Backend/
 ├── visual\_backend/           \# 📊 Visualization service  
 │   ├── app\_tiles.py          \# Streamlit application entry (with tile map)  
 │   ├── app\_notiles.py        \# Streamlit application entry (without tile map)  
+│   ├── app\_opensky.py        \# ADS-B global aircraft snapshot visualization entry  
+│   ├── app\_ais.py            \# AIS global vessel snapshot visualization entry  
 │   └── tiles/                \# Map tile service  
 │       ├── cors\_server.py    \# CORS server  
 │       └── gaode\_tiles/      \# Locally cached Gaode map tiles  
@@ -78,6 +80,8 @@ Space-MV ScAI Backend/
 │   └── stk\_backprogress.py   \# Data processing function library  
 │  
 ├── timer.py                  \# 🕒 Satellite data synchronization timer  
+├── opensky_timer.py          \# ✈️ ADS-B data synchronization timer  
+├── ais_timer.py              \# 🚢 AIS data synchronization timer  
 ├── requirements.txt          \# Project dependencies  
 └── .env.example              \# Environment configuration example file
 
@@ -99,8 +103,13 @@ Space-MV ScAI Backend/
 
 graph TD  
     A\[Celestrak API\] \--\>|Sync Data| B(timer.py Timer)  
+    G\[OpenSky Network API\] \--\>|ADS-B Sync| H(opensky_timer.py Timer)  
+    I\[AISStream WebSocket\] \--\>|AIS Sync| J(ais_timer.py Timer)  
     B \--\>|Write/Update| C\[(ClickHouse Database)\]  
+    H \--\>|Write Snapshot| C  
+    J \--\>|Write Batch| C  
     C \<--\>|Read/Write Data| D\[serve\_backend Simulation Service\]  
+    C \--\>|Snapshot Query| E\[visual\_backend Visualization Service\]  
     D \--\>|Provide Data| E\[visual\_backend Visualization Service\]  
     E \--\>|Interactive Display| F\[User Interface\]
 
@@ -131,12 +140,17 @@ graph TD
 * 🌍 **2D Map Visualization**: Real-time rendering of satellite trajectories, sensor coverage envelopes, and target areas (points/lines/polygons).  
 * 🗺️ **Tile Service**: Integrated custom or offline map tiles.  
 * 📦 **Data Loading**: Supports automatic parsing and loading of simulation results from compressed packages or JSON.
+* ✈️ **ADS-B Visualization**: Adds `app_opensky.py` for global aircraft snapshot display based on the `opensky` table, including UTC time slider selection, map point picking, and aircraft attribute inspection.  
+* 🚢 **AIS Visualization**: Adds `app_ais.py` for global vessel snapshot display based on the `AIS` table, including batch time selection, map point picking, and vessel attribute inspection.  
+* 🧭 **Dual Basemap Modes**: Both ADS-B and AIS pages support offline vector basemaps and local tile basemaps; when using local tiles, start `visual_backend/tiles/cors_server.py` first.  
 
-### **4\. Data Synchronization (timer.py)**
+### **4\. Data Synchronization (timer.py / opensky_timer.py / ais_timer.py)**
 
 * Automatically retrieves the latest TLE data from Celestrak API.  
 * Intelligently identifies and classifies constellations (GPS, Starlink, Beidou, etc.).  
 * Automatically initializes database table structure and maintains data tables.
+* ✈️ **ADS-B Synchronization (`opensky_timer.py`)**: Pulls global aircraft state vectors from OpenSky Network every hour, auto-creates the `opensky` table, and writes snapshot data; authenticated requests can be enabled with `OPENSKY_USERNAME` / `OPENSKY_PASSWORD`.  
+* 🚢 **AIS Synchronization (`ais_timer.py`)**: Collects vessel position data from the AISStream WebSocket every hour, receives data continuously for 3 minutes per batch by default, keeps the latest record per vessel, and auto-creates the `AIS` table; `AISSTREAM_API_KEY` is required before enabling it.  
 
 ## **🚀 Quick Start**
 
@@ -145,6 +159,8 @@ graph TD
 * **Docker** (for deploying ClickHouse)  
 * **STK Desktop (Windows) / STK Engine (Linux) 12.X**  
 * Python environment with **STK agi package** configured
+* Optional: **OpenSky Network account** (recommended for better ADS-B API availability)  
+* Optional: **AISStream API Key** (required when enabling AIS synchronization)  
 
 ### **1. Environment Setup**
 ```bash
@@ -181,6 +197,13 @@ docker run -d \
 # Initialize data  
 python timer.py
 ```
+
+To enable the new ADS-B / AIS synchronization flows, start the following scripts separately. On first run they auto-create tables, perform one collection, and then enter hourly scheduling:
+
+```bash
+python opensky_timer.py
+python ais_timer.py
+```
 ### **3. Environment Variable Configuration**
 ```ini
 Copy example file and modify configuration:
@@ -211,6 +234,15 @@ SSH_PASSWORD=xxxxx
 
 # LLM Configuration (currently only supports ollama framework)  
 OLLAMA_URL=http://your_ollama_host:11434/api/chat
+
+# OpenSky ADS-B configuration (optional, enables authenticated requests)
+OPENSKY_USERNAME=your_opensky_username
+OPENSKY_PASSWORD=your_opensky_password
+
+# AIS ingestion configuration (API key required for ais_timer.py)
+AISSTREAM_API_KEY=your_aisstream_api_key
+AIS_WS_URL=wss://stream.aisstream.io/v0/stream
+AIS_BATCH_MINUTES=3
 ```
 ### **4. Start Services**
 ```bash
@@ -226,6 +258,19 @@ pm2 start start_project.config.js
 pm2 list
 ```
 
+`start_project.config.js` currently starts the original services by default. The new ADS-B / AIS timers and visualization pages can be deployed separately as needed, for example:
+
+```bash
+python opensky_timer.py
+python ais_timer.py
+
+streamlit run visual_backend/app_opensky.py --server.headless true --server.port 8502
+streamlit run visual_backend/app_ais.py --server.headless true --server.port 8503
+
+# Required when local tile mode is used
+python visual_backend/tiles/cors_server.py
+```
+
 For the SpaceMV-ScAI client repository, please refer to [SpaceMV-ScAI-frontend](https://github.com/tianxunweixiao/SpaceMV-ScAI-frontend)
 
 ## **📚 API Documentation**
@@ -235,6 +280,11 @@ After the service starts successfully, you can access the automatically generate
 * **Account Service**: [http://localhost:5001/docs](http://localhost:5001/docs)  
 * **Simulation Service**: [http://localhost:8401/docs](http://localhost:8401/docs)
 
+If the new visualization pages are started with the example ports above, you can access:
+
+* **ADS-B Visualization**: [http://localhost:8502](http://localhost:8502)  
+* **AIS Visualization**: [http://localhost:8503](http://localhost:8503)  
+
 ## **🔧 Troubleshooting**
 
 | Issue | Possible Causes and Troubleshooting |
@@ -242,6 +292,9 @@ After the service starts successfully, you can access the automatically generate
 | **ClickHouse Connection Failure** | 1\. Check .env configuration. 2\. Confirm Docker container status (docker ps). 3\. Check if ports 8123/9000 are blocked by firewall. |
 | **STK Simulation Failure** | 1\. Confirm if STK License is valid. 2\. If using remote mode, check SSH connectivity and REPLACE\_BASE path mapping. 3\. Verify if Python environment has agi.stk library correctly installed. |
 | **No Data in Visualization** | 1\. Check if JSON files are generated in serve\_backend/output. 2\. Check browser F12 Console for parsing errors. |
+| **No ADS-B Data** | 1\. Confirm `opensky_timer.py` is running. 2\. Check whether the `opensky` table exists in ClickHouse. 3\. If requests are rate-limited or empty, configure `OPENSKY_USERNAME` / `OPENSKY_PASSWORD` and retry later. |
+| **No AIS Data** | 1\. Check whether `AISSTREAM_API_KEY` is configured correctly. 2\. Confirm `ais_timer.py` can reach `AIS_WS_URL`. 3\. Check whether the `AIS` table exists and whether the selected batch time window contains data. |
+| **ADS-B / AIS Visualization Page Is Empty** | 1\. Confirm the corresponding Streamlit page is connected to the correct ClickHouse instance. 2\. Check whether the `opensky` / `AIS` tables already contain data. 3\. When using local tile mode, confirm `visual_backend/tiles/cors_server.py` is running. |
 
 ## **🤝 Contributing Guide**
 

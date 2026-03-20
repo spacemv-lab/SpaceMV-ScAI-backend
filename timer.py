@@ -104,6 +104,7 @@ def fetch_and_update():
                                     password String,
                                     email String,
                                     status UInt8,
+                                    coverage_analysis_permission UInt8 DEFAULT 0,
                                     create_at DateTime,
                                     updated_at DateTime,
                                     password_salt String

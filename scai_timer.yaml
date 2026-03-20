@@ -1,0 +1,42 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: timer-worker
+  namespace: scai
+spec:
+  # 只需要 1 个 Pod 即可，避免多个定时器并发执行导致业务逻辑重复
+  replicas: 1
+  selector:
+    matchLabels:
+      app: timer-worker
+  template:
+    metadata:
+      labels:
+        app: timer-worker
+    spec:
+      imagePullSecrets:
+      - name: harbor-auth-secret
+      containers:
+      - name: timer
+        image: ci.txxw.com/scai-test/scai_backend:1.0.0
+        imagePullPolicy: Always
+        # 工作目录在根 workspace
+        workingDir: /workspace
+        # 对应 PM2 的解释器和脚本
+        command: ["python"]
+        args: ["timer.py"]
+        # 不需要定义 ports，因为它不暴露任何网络端口
+        env:
+        - name: LANG
+          value: "C.UTF-8"
+        - name: LC_ALL
+          value: "C.UTF-8"
+        resources:
+          requests:
+            # 定时任务通常不需要太多内存，这里设为 256Mi
+            memory: "256Mi"
+            cpu: "20m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"

@@ -1,7 +1,7 @@
 import enum
 from typing import Optional
 
-from sqlalchemy import String, DateTime, func, PrimaryKeyConstraint
+from sqlalchemy import String, DateTime, Integer, func, PrimaryKeyConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 from clickhouse_sqlalchemy import engines
 
@@ -30,5 +30,6 @@ class Account(Base):
     password_salt: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(255), nullable=False)
+    coverage_analysis_permission: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     create_at: Mapped[DateTime] = mapped_column(DateTime, nullable=False, server_default=func.current_timestamp())
     updated_at: Mapped[DateTime] = mapped_column(DateTime, nullable=False, server_default=func.current_timestamp())

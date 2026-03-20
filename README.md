@@ -42,8 +42,8 @@ Space-MV ScAI Backend 由以下四大核心模块组成：
 | :---- | :---- | :---- |
 | **账户管理服务** | account\_backend | 负责用户认证（JWT）、权限管理及账户安全。 |
 | **仿真服务** | serve\_backend | 核心引擎，处理卫星数据管理及 STK 覆盖性仿真分析。 |
-| **可视化服务** | visual\_backend | 基于 Streamlit 构建的可视化平台，支持瓦片地图与轨迹展示。 |
-| **数据同步** | timer.py | 定时任务脚本，负责从 Celestrak API 同步最新的卫星数据。 |
+| **可视化服务** | visual\_backend | 基于 Streamlit 构建的可视化平台，支持瓦片地图、轨迹展示，以及 ADS-B / AIS 全球目标快照可视化。 |
+| **数据同步** | timer.py / opensky\_timer.py / ais\_timer.py | 定时任务脚本，负责从 Celestrak API 同步最新卫星数据，并同步 ADS-B 航空器状态和 AIS 船舶位置数据。 |
 
 ## **🏗 技术架构**
 
@@ -61,14 +61,16 @@ Space-MV ScAI Backend/
 ├── serve\_backend/            \# 🛰️ 仿真服务  
 │   ├── app.py                \# FastAPI 应用入口  
 │   ├── configs/              \# 配置管理  
-│   ├── controllers/          \# 路由控制器（卫星、星座、传感器、仿真、LLM）  
+│   ├── controllers/          \# 路由控制器（卫星、星座、传感器、仿真）  
 │   ├── services/             \# 业务逻辑层  
 │   ├── libs/                 \# 工具库（仿真报告生成）  
 │   └── output/               \# 仿真结果输出目录  
 │  
 ├── visual\_backend/           \# 📊 可视化服务  
-│   ├── app\_tiles.py          \# Streamlit 应用入口（带瓦片地图）  
-│   ├── app\_notiles.py        \# Streamlit 应用入口（无瓦片地图）  
+│   ├── app\_tiles.py          \# 覆盖性分析入口（带瓦片地图）  
+│   ├── app\_notiles.py        \# 覆盖性分析入口（无瓦片地图）  
+│   ├── app\_opensky.py        \# ADS-B 全球飞机快照可视化入口  
+│   ├── app\_ais.py            \# AIS 全球船舶快照可视化入口  
 │   └── tiles/                \# 地图瓦片服务  
 │       ├── cors\_server.py    \# CORS 服务器  
 │       └── gaode\_tiles/      \# 本地缓存的高德地图瓦片  
@@ -78,6 +80,8 @@ Space-MV ScAI Backend/
 │   └── stk\_backprogress.py   \# 数据处理函数库  
 │  
 ├── timer.py                  \# 🕒 卫星数据同步定时器  
+├── opensky_timer.py          \# ✈️ ADS-B 数据同步定时器  
+├── ais_timer.py              \# 🚢 AIS 数据同步定时器  
 ├── requirements.txt          \# 项目依赖  
 └── .env.example              \# 环境配置示例文件
 
@@ -99,8 +103,13 @@ Space-MV ScAI Backend/
 
 graph TD  
     A\[Celestrak API\] \--\>|同步数据| B(timer.py 定时器)  
+    G\[OpenSky Network API\] \--\>|ADS-B 同步| H(opensky_timer.py 定时器)  
+    I\[AISStream WebSocket\] \--\>|AIS 同步| J(ais_timer.py 定时器)  
     B \--\>|写入/更新| C\[(ClickHouse 数据库)\]  
+    H \--\>|写入快照| C  
+    J \--\>|写入批次| C  
     C \<--\>|读写数据| D\[serve\_backend 仿真服务\]  
+    C \--\>|快照查询| E\[visual\_backend 可视化服务\]  
     D \--\>|提供数据| E\[visual\_backend 可视化服务\]  
     E \--\>|交互展示| F\[用户界面\]
 
@@ -124,19 +133,23 @@ graph TD
   * 支持 STK 覆盖性分析仿真（流式输出）。  
   * **混合调度模式**: 支持本地执行或通过 SSH 调度远程 STK 服务器执行任务。  
   * 自动生成仿真报告。  
-* 🤖 **LLM 集成**: 集成 Ollama，提供基于 AI 的对话辅助功能。
 
 ### **3\. 可视化服务 (visual\_backend)**
 
 * 🌍 **2D 地图可视化**: 实时渲染卫星轨迹、传感器覆盖包络及目标区域（点/线/面）。  
 * 🗺️ **瓦片服务**: 集成自定义或离线地图瓦片。  
 * 📦 **数据加载**: 支持从压缩包或 JSON 自动解析并加载仿真结果。
+* ✈️ **ADS-B 可视化**: 新增 `app_opensky.py`，支持基于 `opensky` 表的全球飞机快照展示、UTC 时间滑块选择、地图点选和飞机属性明细查看。  
+* 🚢 **AIS 可视化**: 新增 `app_ais.py`，支持基于 `AIS` 表的全球船舶快照展示、批次时间选择、地图点选和船舶属性明细查看。  
+* 🧭 **双底图模式**: ADS-B / AIS 页面均支持离线矢量底图与本地瓦片底图切换；启用本地瓦片模式时需先启动 `visual_backend/tiles/cors_server.py`。  
 
-### **4\. 数据同步 (timer.py)**
+### **4\. 数据同步 (timer.py / opensky_timer.py / ais_timer.py)**
 
 * 自动从 Celestrak API 获取最新 TLE 数据。  
 * 智能识别并分类星座（GPS, Starlink, Beidou 等）。  
 * 自动初始化数据库表结构并维护数据表。
+* ✈️ **ADS-B 同步 (`opensky_timer.py`)**: 按 1 小时间隔从 OpenSky Network 拉取全球飞机状态向量，自动创建 `opensky` 表并写入快照数据；配置 `OPENSKY_USERNAME` / `OPENSKY_PASSWORD` 后可使用认证请求。  
+* 🚢 **AIS 同步 (`ais_timer.py`)**: 按 1 小时间隔从 AISStream WebSocket 采集船舶位置数据，默认每批连续接收 3 分钟并保留每艘船舶最新一条记录，自动创建 `AIS` 表；启用前需配置 `AISSTREAM_API_KEY`。  
 
 ## **🚀 快速开始**
 
@@ -145,6 +158,8 @@ graph TD
 * **Docker** (用于部署 ClickHouse)  
 * **STK Desktop (Windows) / STK Engine (Linux) 12.X**  
 * 已配置好 **STK agi 包** 的 Python 环境
+* 可选：**OpenSky Network 账号**（用于提升 ADS-B 接口可用性）  
+* 可选：**AISStream API Key**（启用 AIS 数据同步时必需）  
 
 ### **1. 环境准备**
 ```bash
@@ -181,6 +196,13 @@ docker run -d \
 # 初始化数据  
 python timer.py
 ```
+
+如需启用新增的 ADS-B / AIS 数据同步，可分别启动以下脚本（首次运行会自动建表并执行一次采集，随后进入每小时调度）：
+
+```bash
+python opensky_timer.py
+python ais_timer.py
+```
 ### **3. 环境变量配置**
 ```ini
 复制示例文件并修改配置：
@@ -209,8 +231,14 @@ SSH_HOST=xxx
 SSH_USER=xxx  
 SSH_PASSWORD=xxxxx
 
-# LLM配置(暂时仅支持ollama框架)  
-OLLAMA_URL=http://your_ollama_host:11434/api/chat
+# OpenSky ADS-B 配置（可选，配置后使用认证请求）
+OPENSKY_USERNAME=your_opensky_username
+OPENSKY_PASSWORD=your_opensky_password
+
+# AIS 数据采集配置（启用 ais_timer.py 时必填 API Key）
+AISSTREAM_API_KEY=your_aisstream_api_key
+AIS_WS_URL=wss://stream.aisstream.io/v0/stream
+AIS_BATCH_MINUTES=1
 ```
 ### **4. 启动服务**
 ```bash
@@ -226,6 +254,19 @@ pm2 start start_project.config.js
 pm2 list
 ```
 
+当前 `start_project.config.js` 默认启动基础服务；ADS-B / AIS 定时器与可视化页面可按需单独部署，例如：
+
+```bash
+python opensky_timer.py
+python ais_timer.py
+
+streamlit run visual_backend/app_opensky.py --server.headless true --server.port 8502
+streamlit run visual_backend/app_ais.py --server.headless true --server.port 8503
+
+# 若使用本地瓦片模式，需额外启动
+python visual_backend/tiles/cors_server.py
+```
+
 SpaceMV-ScAI 客户端仓库可参考[SpaceMV-ScAI-frontend](https://github.com/tianxunweixiao/SpaceMV-ScAI-frontend)
 
 ## **📚 API 文档**
@@ -235,6 +276,11 @@ SpaceMV-ScAI 客户端仓库可参考[SpaceMV-ScAI-frontend](https://github.com/
 * **账户服务**: [http://localhost:5001/docs](http://localhost:5001/docs)  
 * **仿真服务**: [http://localhost:8401/docs](http://localhost:8401/docs)
 
+ADS-B和AIS数据可单独启动可视化页面，访问：
+
+* **ADS-B 可视化**: [http://localhost:8502](http://localhost:8502)  
+* **AIS 可视化**: [http://localhost:8503](http://localhost:8503)  
+
 ## **🔧 故障排除**
 
 | 问题 | 可能原因及排查方法 |
@@ -242,6 +288,9 @@ SpaceMV-ScAI 客户端仓库可参考[SpaceMV-ScAI-frontend](https://github.com/
 | **ClickHouse 连接失败** | 1\. 检查 .env 配置。 2\. 确认 Docker 容器状态 (docker ps)。 3\. 检查 8123/9000 端口是否被防火墙拦截。 |
 | **STK 仿真失败** | 1\. 确认 STK License 是否有效。 2\. 若使用远程模式，检查 SSH 连通性及 REPLACE\_BASE 路径映射。 3\. 验证 Python 环境是否正确安装了 agi.stk 库。 |
 | **可视化无数据** | 1\. 检查 serve\_backend/output 下是否有生成的 JSON 文件。 2\. 浏览器 F12 查看 Console 是否有解析错误。 |
+| **ADS-B 无数据** | 1\. 确认 `opensky_timer.py` 正在运行。 2\. 检查 ClickHouse 中 `opensky` 表是否已创建。 3\. 如遇限流或返回为空，可配置 `OPENSKY_USERNAME` / `OPENSKY_PASSWORD` 后重试。 |
+| **AIS 无数据** | 1\. 检查 `AISSTREAM_API_KEY` 是否正确配置。 2\. 确认 `ais_timer.py` 可以访问 `AIS_WS_URL`。 3\. 检查 ClickHouse 中 `AIS` 表是否已创建且批次时间范围内存在数据。 |
+| **ADS-B / AIS 可视化页面为空** | 1\. 确认对应 Streamlit 页面连接的是正确的 ClickHouse 实例。 2\. 检查 `opensky` / `AIS` 表中是否已有数据。 3\. 若使用本地瓦片模式，确认 `visual_backend/tiles/cors_server.py` 已启动。 |
 
 ## **🤝 贡献指南**
 
